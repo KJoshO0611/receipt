@@ -160,6 +160,14 @@
     .cell.amount .prefix { user-select: none; color: #111827; }
     .cell.amount .value { min-width: 80px; border-bottom: 1px dashed rgba(107,114,128,.4); }
 
+    /* Clean capture mode */
+    .exporting .field,
+    .exporting .cell { border-color: transparent !important; }
+    .exporting .cell.amount .value { border-color: transparent !important; }
+    .exporting .field:focus { outline: none !important; }
+    .exporting .field[contenteditable="true"]:empty:before,
+    .exporting .cell[contenteditable="true"]:empty:before { content: '' !important; }
+
     .total      { right: 40px; bottom: 300px; width: 200px; color: #5b21b6; font-weight: 700; }
 
     .recv-name  { left: 120px; bottom: 178px; width: 320px; }
@@ -222,6 +230,7 @@
       <input id="quarterToggle" type="checkbox" /> Quarter A4 mode
     </label>
     <button id="addReceipt" type="button">Add receipt</button>
+    <button id="saveImages" type="button">Save as image(s)</button>
     <button id="addLine" type="button">Add line</button>
     <button id="removeLine" type="button">Remove last</button>
     <button class="primary" onclick="window.print()">Print</button>
@@ -292,6 +301,8 @@
     </div>
   </div>
 
+  <!-- html2canvas for exporting to images -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script>
     // Helper to read image files as data URLs (used for signatures)
     function loadImageFile(input, cb) {
@@ -316,6 +327,34 @@
       });
     }
 
+    // Export each receipt (.page > .content) as an individual PNG
+    async function savePageAsImage(contentEl, index) {
+      // Temporarily remove scaling for crisp capture
+      const prevTransform = contentEl.style.transform;
+      contentEl.style.transform = 'none';
+      contentEl.classList.add('exporting');
+      try {
+        const canvas = await html2canvas(contentEl, {
+          backgroundColor: '#ffffff',
+          useCORS: true,
+          scale: Math.max(2, window.devicePixelRatio),
+          logging: false,
+        });
+        const dataUrl = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = `receipt-${index}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } finally {
+        contentEl.style.transform = prevTransform;
+        contentEl.classList.remove('exporting');
+      }
+    }
+
+    // (listener moved below after variable declarations)
+
     // Signature upload applies to the first receipt for now
     connectSignature('sigPayorPicker', 'sigPayor');
     connectSignature('sigRecvPicker', 'sigRecv');
@@ -328,6 +367,7 @@
     const totalField = document.getElementById('totalField');
     const quarterToggle = document.getElementById('quarterToggle');
     const addReceiptBtn = document.getElementById('addReceipt');
+    const saveImagesBtn = document.getElementById('saveImages');
     const pagesWrap = document.getElementById('pages');
 
     function addRow(desc = '', amt = '') {
@@ -454,6 +494,16 @@
     addRow('JIISA Org T-Shirt', '255.00');
     addRow('(Size: S-XL (No additional))', '0.00');
     applyAutoToggle();
+
+    // Now attach image export listener (after saveImagesBtn is declared)
+    saveImagesBtn.addEventListener('click', async () => {
+      const pages = Array.from(document.querySelectorAll('#pages .page'));
+      let i = 1;
+      for (const page of pages) {
+        const content = page.querySelector('.content');
+        if (content) await savePageAsImage(content, i++);
+      }
+    });
 
     // Add receipt (duplicates the current one for printing multiple per page)
     addReceiptBtn.addEventListener('click', () => {
